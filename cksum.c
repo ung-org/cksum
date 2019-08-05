@@ -17,18 +17,24 @@
  *
  */
 
-#define _XOPEN_SOURCE 700
+#define _POSIX_C_SOURCE 2
+#include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
+#include <locale.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
-/* G(x)=x32+x26+x23+x22+x16+x12+x11+x10+x8+x7+x5+x4+x2+x+1 */
-const uint64_t polynomial = UINT64_C(0x104C11DB7);
+/* TODO: study http://ross.net/crc/download/crc_v3.txt */
 
 int cksum(const char *path)
 {
-	uint64_t checksum = 0;
+	const uint_least32_t polynomial =
+	/* 0x04c11db7; */	/* x^32 is implicit */
+	0x82608edb;		/* +1 is implicit */
+
+	uint_least32_t crc = UINT_LEAST32_MAX;
 	intmax_t octets = 0;
 
 	FILE *f = stdin;
@@ -37,34 +43,40 @@ int cksum(const char *path)
 	}
 
 	if (f == NULL) {
+		fprintf(stderr, "cksum: %s: %s\n", path, strerror(errno));
 		return 1;
 	}
 
-	while (!feof(f)) {
-		uint64_t next = 0;
-		octets += fread(&next, sizeof(next), 1, f);
-		checksum ^= next;
+	int c;
+	while ((c = fgetc(f)) != EOF) {
+		octets++;
+		crc ^= (unsigned char)c;
+		for (int k = 0; k < CHAR_BIT; k++) {
+			crc = crc & 1 ? (crc >> 1) ^ polynomial : crc >> 1;
+		}
 	}
 
+	printf("%"PRIuLEAST32" %"PRIdMAX"", crc, octets);
 	if (f != stdin) {
+		printf(" %s", path);
 		fclose(f);
 	}
+	putchar('\n');
 
-	printf("%"PRIu64" %"PRIdMAX" %s\n", checksum, octets, path);
 	return 0;
 }
 
 int main(int argc, char *argv[])
 {
+	setlocale(LC_ALL, "");
+
 	while (getopt(argc, argv, "") != -1) {
 		return 1;
 	}
 
 	int r = 0;
-
 	do {
 		r |= cksum(argv[optind++]);
 	} while (optind < argc);
-
-	return 0;
+	return r;
 }
