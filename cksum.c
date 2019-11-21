@@ -118,8 +118,6 @@ static struct sum sum_alternative(FILE *f)
 
 int cksum(const char *path, enum algorithm alg)
 {
-	uintmax_t octets = 0;
-
 	FILE *f = stdin;
 	if (path && strcmp(path, "-")) {
 		f = fopen(path, "rb");
