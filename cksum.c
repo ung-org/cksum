@@ -27,17 +27,19 @@
 #include <string.h>
 #include <unistd.h>
 
-enum algorithm { UNSPECIFIED, ALTERNATIVE, CRC32 };
-
 #define MAX_SUM_WIDTH	(32)
 #define UINT32_BIT	(32)
 #define UINT16_BIT	(16)
 #define BLOCK_SIZE	(512)
 
+enum algorithm { UNSPECIFIED, ALTERNATIVE, CRC32 };
+
 struct sum {
 	uintmax_t size;
 	uintmax_t sum;
 };
+
+static char *progname = NULL;
 
 static uint32_t reverse(uint32_t n, int width)
 {
@@ -124,7 +126,7 @@ int cksum(const char *path, enum algorithm alg)
 	}
 
 	if (f == NULL) {
-		fprintf(stderr, "cksum: %s: %s\n", path, strerror(errno));
+		fprintf(stderr, "%s: %s: %s\n", progname, path, strerror(errno));
 		return 1;
 	}
 
@@ -159,7 +161,6 @@ int cksum(const char *path, enum algorithm alg)
 
 static int sum(int argc, char *argv[])
 {
-	setlocale(LC_ALL, "");
 	fprintf(stderr, "sum: utility is obsolete; use cksum\n");
 
 	enum algorithm alg = UNSPECIFIED;
@@ -187,8 +188,8 @@ int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "");
 
-	char *base = basename(argv[0]);
-	if (!strcmp(base, "sum")) {
+	progname = basename(argv[0]);
+	if (!strcmp(progname, "sum")) {
 		return sum(argc, argv);
 	}
 
