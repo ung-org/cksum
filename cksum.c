@@ -20,18 +20,23 @@
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <inttypes.h>
+#include <libgen.h>
 #include <limits.h>
 #include <locale.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
+enum algorithm { UNSPECIFIED, ALTERNATIVE, CRC32 };
+
 #define MAX_SUM_WIDTH	(32)
 #define UINT32_BIT	(32)
+#define UINT16_BIT	(16)
+#define BLOCK_SIZE	(512)
 
 struct sum {
 	uintmax_t size;
-	char sum[MAX_SUM_WIDTH];
+	uintmax_t sum;
 };
 
 static uint32_t reverse(uint32_t n, int width)
@@ -44,7 +49,7 @@ static uint32_t reverse(uint32_t n, int width)
 	return r;
 }
 
-static struct sum crc32(FILE *f)
+static struct sum sum_crc32(FILE *f)
 {
 	const uint32_t polynomial = 0x04c11db7;
 	uint32_t crc = UINT32_MAX;
@@ -64,11 +69,52 @@ static struct sum crc32(FILE *f)
 	}
 	crc = reverse(crc, CHAR_BIT * sizeof(crc)) ^ UINT32_MAX;
 
-	snprintf(sum.sum, sizeof(sum.sum), "%"PRIu32, crc);
+	sum.sum = crc;
 	return sum;
 }
 
-int cksum(const char *path)
+static struct sum sum_obsolete(FILE *f, int alt)
+{
+	struct sum sum = { 0 };
+
+	int c;
+	while ((c = fgetc(f)) != EOF) {
+		sum.size++;
+
+		if (alt) {
+			sum.sum = (sum.sum >> 1) +
+				((sum.sum & 1) << (UINT16_BIT - 1));
+		}
+
+		sum.sum += c;
+
+		if (alt) {
+			sum.sum &= UINT16_MAX;
+		}
+	}
+
+	sum.sum = (sum.sum & UINT16_MAX) + (sum.sum >> UINT16_BIT);
+
+	/* obsolete sum program prints number of 512 byte blocks */
+	if (sum.size % BLOCK_SIZE != 0) {
+		sum.size += BLOCK_SIZE;
+	}
+	sum.size /= BLOCK_SIZE;
+
+	return sum;
+}
+
+static struct sum sum_unspecified(FILE *f)
+{
+	return sum_obsolete(f, 0);
+}
+
+static struct sum sum_alternative(FILE *f)
+{
+	return sum_obsolete(f, 1);
+}
+
+int cksum(const char *path, enum algorithm alg)
 {
 	uintmax_t octets = 0;
 
@@ -82,8 +128,25 @@ int cksum(const char *path)
 		return 1;
 	}
 
-	struct sum sum = crc32(f);
-	printf("%s %"PRIuMAX"", sum.sum, sum.size);
+	struct sum sum;
+	switch (alg) {
+	case UNSPECIFIED:
+		sum = sum_unspecified(f);
+		break;
+
+	case ALTERNATIVE:
+		sum = sum_alternative(f);
+		break;
+
+	case CRC32:
+		sum = sum_crc32(f);
+		break;
+
+	default:
+		break;
+	}
+
+	printf("%"PRIuMAX" %"PRIuMAX"", sum.sum, sum.size);
 
 	if (f != stdin) {
 		printf(" %s", path);
@@ -94,9 +157,40 @@ int cksum(const char *path)
 	return 0;
 }
 
+static int sum(int argc, char *argv[])
+{
+	setlocale(LC_ALL, "");
+	fprintf(stderr, "sum: utility is obsolete; use cksum\n");
+
+	enum algorithm alg = UNSPECIFIED;
+
+	int c;
+	while ((c = getopt(argc, argv, "r")) != -1) {
+		switch (c) {
+		case 'r':
+			alg = ALTERNATIVE;
+			break;
+
+		default:
+			return 1;
+		}
+	}
+
+	int r = 0;
+	do {
+		r |= cksum(argv[optind++], alg);
+	} while (optind < argc);
+	return r;
+}
+
 int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "");
+
+	char *base = basename(argv[0]);
+	if (!strcmp(base, "sum")) {
+		return sum(argc, argv);
+	}
 
 	while (getopt(argc, argv, "") != -1) {
 		return 1;
@@ -104,7 +198,8 @@ int main(int argc, char *argv[])
 
 	int r = 0;
 	do {
-		r |= cksum(argv[optind++]);
+		r |= cksum(argv[optind++], CRC32);
 	} while (optind < argc);
 	return r;
 }
+
