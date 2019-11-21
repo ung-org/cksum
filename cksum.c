@@ -159,7 +159,7 @@ int cksum(const char *path, enum algorithm alg)
 	return 0;
 }
 
-static int sum(int argc, char *argv[])
+int sum_main(int argc, char *argv[])
 {
 	fprintf(stderr, "sum: utility is obsolete; use cksum\n");
 
@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
 
 	progname = basename(argv[0]);
 	if (!strcmp(progname, "sum")) {
-		return sum(argc, argv);
+		return sum_main(argc, argv);
 	}
 
 	while (getopt(argc, argv, "") != -1) {
